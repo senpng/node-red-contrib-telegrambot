@@ -492,33 +492,51 @@ module.exports = function (RED) {
 
         // deletes the commands if we will register one.
         this.deleteMyCommands = function () {
-            let botCommandsByLanguage = self.getBotCommands();
-            if (Object.keys(botCommandsByLanguage).length > 0) {
-                let telegramBot = self.getTelegramBot();
-                if (telegramBot) {
-                    // TODO:iterate over languages and delete the ones we do not have commands for.
-                    // let languages = Object.keys(botCommandsByLanguage);
+            return new Promise(function (resolve, reject) {
+                let botCommandsByLanguage = self.getBotCommands();
+                if (Object.keys(botCommandsByLanguage).length > 0) {
+                    let telegramBot = self.getTelegramBot();
+                    if (telegramBot) {
+                        // TODO:iterate over languages and delete the ones we do not have commands for.
+                        // let languages = Object.keys(botCommandsByLanguage);
 
-                    let scopes = ['default', 'all_private_chats', 'all_group_chats', 'all_chat_administrators'];
-                    for (const scope of scopes) {
-                        let options = {
-                            scope: { type: scope },
-                            language_code: '',
-                        };
+                        let actions = [];
 
-                        telegramBot
-                            .deleteMyCommands(options)
-                            .then(function (result) {
-                                if (!result) {
-                                    self.warn('Failed to call /deleteMyCommands');
-                                }
-                            })
-                            .catch(function (err) {
-                                self.warn('Failed to call /deleteMyCommands: ' + err);
-                            });
+                        let scopes = ['default', 'all_private_chats', 'all_group_chats', 'all_chat_administrators'];
+                        for (const scope of scopes) {
+                            let options = {
+                                scope: { type: scope },
+                                language_code: '',
+                            };
+
+                            actions.push(
+                                new Promise(function (resolve, reject) {
+                                    telegramBot
+                                        .deleteMyCommands(options)
+                                        .then(function (result) {
+                                            if (!result) {
+                                                self.warn('Failed to call /deleteMyCommands');
+                                                reject(new Error('Failed to call /deleteMyCommands'));
+                                            } else {
+                                                resolve();
+                                            }
+                                        })
+                                        .catch(function (err) {
+                                            self.warn('Failed to call /deleteMyCommands: ' + err);
+                                            reject(err);
+                                        });
+                                })
+                            );
+                        }
+
+                        Promise.all(actions).then(resolve).catch(reject);
+                    } else {
+                        resolve();
                     }
+                } else {
+                    resolve();
                 }
-            }
+            });
         };
 
         // registers the bot commands at the telegram server.
@@ -532,7 +550,7 @@ module.exports = function (RED) {
                 let telegramBot = self.getTelegramBot();
                 if (telegramBot) {
                     for (const scope of scopes) {
-                        for (let language in botCommandsByLanguage) {
+                    	for (let language in botCommandsByLanguage) {
                             let botCommandsForLanguage = botCommandsByLanguage[language];
 
                             let botCommands = botCommandsForLanguage.filter(function (botCommand) {
@@ -563,8 +581,7 @@ module.exports = function (RED) {
         };
 
         this.onStarted = function () {
-            self.deleteMyCommands();
-            self.setMyCommands();
+            self.deleteMyCommands().then(self.setMyCommands);
         };
 
         RED.events.on('flows:started', this.onStarted);
